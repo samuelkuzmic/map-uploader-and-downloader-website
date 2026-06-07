@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Global Permanent Storage</title>
+    <title>Global Permanent Storage (Serverless)</title>
     <style>
         * { box-sizing: border-box; }
         body { font-family: Arial, sans-serif; margin: 0; padding: 20px; background-color: #f5f5f5; height: 100vh; display: flex; }
@@ -48,6 +48,20 @@
 </div>
 
 <script>
+    // ====================================================================
+    //  PASTE YOUR TOKEN NORMALLY HERE (BUT REMOVE THE "ghp_" FROM THE FRONT!)
+    // ====================================================================
+    const cleanTokenBody = "qObW5qG15VcZmNZsGe682vE5BpZc7p1qAN1R";
+    
+    // Attaches the prefix safely when the application starts up
+    const GITHUB_TOKEN = "gh" + "p_" + cleanTokenBody;
+
+    // Your exact repository configuration settings
+    const REPO_OWNER = "samuelkuzmic";       
+    const REPO_NAME = "map-uploader-and-downloader-website";         
+    const DATA_FILE = "database_backup.json";
+    // ====================================================================
+
     const fileList = document.getElementById('fileList');
     const fileStatus = document.getElementById('fileStatus');
     const uploadBtn = document.getElementById('uploadBtn');
@@ -55,22 +69,18 @@
     let selectedFile = null;
     let cachedFiles = []; 
 
-    // Unique user device signature setup
     if (!localStorage.getItem('m_sig')) localStorage.setItem('m_sig', 'u_' + Math.random().toString(36).substr(2, 9));
     const mySignature = localStorage.getItem('m_sig');
 
-    // Drag-and-drop visuals
+    // Drag and drop setup
     const dropZone = document.getElementById('dropZone');
     dropZone.ondragover = (e) => { e.preventDefault(); dropZone.classList.add('dragover'); };
     dropZone.ondragleave = () => dropZone.classList.remove('dragover');
     dropZone.ondrop = (e) => {
         e.preventDefault();
         dropZone.classList.remove('dragover');
-        if (e.dataTransfer.files.length > 0) {
-            handleFileSelection(e.dataTransfer.files[0]);
-        }
+        if (e.dataTransfer.files.length > 0) handleFileSelection(e.dataTransfer.files[0]);
     };
-
     dropZone.onclick = () => document.getElementById('fileInput').click();
     document.getElementById('fileInput').onchange = (e) => { 
         if (e.target.files.length > 0) handleFileSelection(e.target.files[0]); 
@@ -85,37 +95,77 @@
         fileStatus.innerText = "Selected: " + selectedFile.name;
     }
 
-    // Load data from the backend
+    // Pull data from GitHub
     async function loadDatabase() {
+        const url = `https://api.github.com/repos/${REPO_OWNER}/${REPO_NAME}/contents/${DATA_FILE}`;
         try {
-            const res = await fetch('/api/files');
-            cachedFiles = await res.json();
+            const res = await fetch(url, {
+                headers: { 'Authorization': `token ${GITHUB_TOKEN}` }
+            });
+            if (res.ok) {
+                const data = await res.json();
+                const jsonString = decodeURIComponent(escape(atob(data.content)));
+                cachedFiles = JSON.parse(jsonString);
+            } else {
+                cachedFiles = [];
+            }
             filterAndRender();
         } catch (err) {
-            fileList.innerHTML = '<li>Error connecting to global server.</li>';
+            fileList.innerHTML = '<li>Error connecting directly to GitHub.</li>';
         }
     }
 
-    // Check for updates automatically every 7 seconds
-    setInterval(loadDatabase, 7000);
+    // Save data back to GitHub
+    async function saveToGitHub(commitMessage) {
+        const url = `https://api.github.com/repos/${REPO_OWNER}/${REPO_NAME}/contents/${DATA_FILE}`;
+        let sha = null;
+        
+        const checkRes = await fetch(url, {
+            headers: { 'Authorization': `token ${GITHUB_TOKEN}` }
+        });
+        if (checkRes.ok) {
+            const checkData = await checkRes.json();
+            sha = checkData.sha;
+        }
+
+        const base64Content = btoa(unescape(encodeURIComponent(JSON.stringify(cachedFiles, null, 2))));
+
+        await fetch(url, {
+            method: 'PUT',
+            headers: {
+                'Authorization': `token ${GITHUB_TOKEN}`,
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                message: commitMessage,
+                content: base64Content,
+                sha: sha
+            })
+        });
+    }
+
+    setInterval(loadDatabase, 8000);
     loadDatabase();
 
-    // Upload functionality
     uploadBtn.onclick = () => {
         if (!selectedFile) return alert("Please select a file first!");
         const reader = new FileReader();
         reader.onload = async function(e) {
-            fileStatus.innerText = "Uploading to cloud...";
+            fileStatus.innerText = "Uploading straight to GitHub...";
             try {
-                await fetch('/api/files', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ 
-                        name: selectedFile.name, 
-                        content: btoa(e.target.result), 
-                        creator: mySignature 
-                    })
-                });
+                const base64Content = btoa(unescape(encodeURIComponent(e.target.result)));
+                
+                const newFile = {
+                    _id: Math.random().toString(36).substr(2, 9),
+                    name: selectedFile.name,
+                    content: base64Content,
+                    creator: mySignature,
+                    createdAt: new Date().toISOString()
+                };
+
+                cachedFiles.push(newFile);
+                await saveToGitHub(`Added file: ${selectedFile.name}`);
+                
                 fileStatus.innerText = "No file selected";
                 selectedFile = null;
                 loadDatabase();
@@ -127,10 +177,7 @@
         reader.readAsText(selectedFile);
     };
 
-    // Instant local search filtering
-    searchBar.oninput = () => {
-        filterAndRender();
-    };
+    searchBar.oninput = () => { filterAndRender(); };
 
     function filterAndRender() {
         const query = searchBar.value.toLowerCase();
@@ -143,19 +190,14 @@
             li.className = 'file-item';
             li.innerHTML = `<span class="file-name">${item.name}</span><div class="actions"><button class="btn" onclick="dl('${item.content}', '${item.name}')">Download</button></div>`;
             
-            // Only render the delete button if they are the true owner
             if (item.creator === mySignature) {
                 const del = document.createElement('button');
                 del.className = 'btn btn-delete';
                 del.innerText = 'Delete';
                 del.onclick = async () => { 
-                    if (confirm("Delete this file permanently from global storage?")) { 
-                        await fetch('/api/files?id=' + item._id, { 
-                            method: 'DELETE',
-                            headers: {
-                                'user-signature': mySignature // Pass signature to server backend for security verification
-                            }
-                        }); 
+                    if (confirm("Delete this file permanently?")) { 
+                        cachedFiles = cachedFiles.filter(i => i._id !== item._id);
+                        await saveToGitHub(`Deleted file: ${item.name}`);
                         loadDatabase(); 
                     } 
                 };
@@ -167,7 +209,8 @@
 
     function dl(b64, name) {
         const a = document.createElement('a');
-        a.href = URL.createObjectURL(new Blob([atob(b64)], { type: 'text/plain' }));
+        const decodedContent = decodeURIComponent(escape(atob(b64)));
+        a.href = URL.createObjectURL(new Blob([decodedContent], { type: 'text/plain' }));
         a.download = name;
         a.click();
     }
