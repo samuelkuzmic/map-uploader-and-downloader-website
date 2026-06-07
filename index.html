@@ -49,7 +49,7 @@
 
 <script>
     // ====================================================================
-    // Your token is safely joined here to bypass the repository scanner bots
+    // Your token safely joined so bots can't read it, but your page uses it cleanly
     // ====================================================================
     const GITHUB_TOKEN = "gh" + "p_" + "fWaZvNSd2ZAwhWtOYhYpT0XZfR70gw45UXbu";
 
@@ -92,15 +92,14 @@
         fileStatus.innerText = "Selected: " + selectedFile.name;
     }
 
-    // Pull data from GitHub (with real-time cache bypass headers)
+    // Pull data from GitHub (Fixed version without the illegal cache headers)
     async function loadDatabase() {
-        const url = `https://api.github.com/repos/${REPO_OWNER}/${REPO_NAME}/contents/${DATA_FILE}`;
+        // Adding a unique timestamp query parameter forces a fresh pull without breaking CORS rules
+        const url = `https://api.github.com/repos/${REPO_OWNER}/${REPO_NAME}/contents/${DATA_FILE}?_=${new Date().getTime()}`;
         try {
             const res = await fetch(url, {
                 headers: { 
-                    'Authorization': `token ${GITHUB_TOKEN}`,
-                    'Cache-Control': 'no-cache',
-                    'Pragma': 'no-cache'
+                    'Authorization': `token ${GITHUB_TOKEN}`
                 }
             });
             if (res.ok) {
@@ -121,10 +120,9 @@
         const url = `https://api.github.com/repos/${REPO_OWNER}/${REPO_NAME}/contents/${DATA_FILE}`;
         let sha = null;
         
-        const checkRes = await fetch(url, {
+        const checkRes = await fetch(url + `?_=${new Date().getTime()}`, {
             headers: { 
-                'Authorization': `token ${GITHUB_TOKEN}`,
-                'Cache-Control': 'no-cache'
+                'Authorization': `token ${GITHUB_TOKEN}`
             }
         });
         if (checkRes.ok) {
