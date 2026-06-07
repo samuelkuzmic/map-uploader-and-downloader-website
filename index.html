@@ -49,7 +49,7 @@
 
 <script>
     // ====================================================================
-    //  PASTE YOUR TOKEN NORMALLY HERE (BUT REMOVE THE "ghp_" FROM THE FRONT!)
+    //   PASTE YOUR TOKEN NORMALLY HERE (BUT REMOVE THE "ghp_" FROM THE FRONT!)
     // ====================================================================
     const cleanTokenBody = "qObW5qG15VcZmNZsGe682vE5BpZc7p1qAN1R";
     
@@ -95,12 +95,16 @@
         fileStatus.innerText = "Selected: " + selectedFile.name;
     }
 
-    // Pull data from GitHub
+    // Pull data from GitHub (with updated real-time headers)
     async function loadDatabase() {
         const url = `https://api.github.com/repos/${REPO_OWNER}/${REPO_NAME}/contents/${DATA_FILE}`;
         try {
             const res = await fetch(url, {
-                headers: { 'Authorization': `token ${GITHUB_TOKEN}` }
+                headers: { 
+                    'Authorization': `token ${GITHUB_TOKEN}`,
+                    'Cache-Control': 'no-cache',
+                    'Pragma': 'no-cache'
+                }
             });
             if (res.ok) {
                 const data = await res.json();
@@ -121,7 +125,10 @@
         let sha = null;
         
         const checkRes = await fetch(url, {
-            headers: { 'Authorization': `token ${GITHUB_TOKEN}` }
+            headers: { 
+                'Authorization': `token ${GITHUB_TOKEN}`,
+                'Cache-Control': 'no-cache'
+            }
         });
         if (checkRes.ok) {
             const checkData = await checkRes.json();
